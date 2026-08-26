@@ -1,5 +1,12 @@
 const PAGE_SIZE = 20;
-const state = { offset: 0, total: 0 };
+const state = {
+  offset: 0,
+  total: 0,
+  latestIndexed: null,
+  searchIndexed: null,
+  statusTimer: null,
+  latestStatusText: null,
+};
 const initial = new URLSearchParams(location.search);
 
 const elements = {
@@ -13,6 +20,7 @@ const elements = {
   heading: document.querySelector("#results-heading"),
   summary: document.querySelector("#result-summary"),
   status: document.querySelector("#index-status"),
+  refreshResults: document.querySelector("#refresh-results"),
   pagination: document.querySelector("#pagination"),
   previous: document.querySelector("#previous-page"),
   next: document.querySelector("#next-page"),
@@ -145,6 +153,8 @@ async function runSearch(resetOffset = false) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     state.total = payload.total;
+    if (state.latestIndexed !== null) state.searchIndexed = state.latestIndexed;
+    elements.refreshResults.hidden = true;
     elements.heading.textContent = elements.query.value.trim() ? "搜索结果" : "全部记录";
     elements.summary.textContent = `找到 ${payload.total.toLocaleString()} 条记录`;
     elements.results.replaceChildren(
@@ -173,12 +183,54 @@ async function runSearch(resetOffset = false) {
 async function loadStatus() {
   try {
     const response = await fetch("/api/status");
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const status = await response.json();
-    elements.status.textContent =
-      `已索引 ${Number(status.indexed).toLocaleString()} / ${Number(status.source_downloadable).toLocaleString()} 份 FDA 文档`;
+    const indexed = Number(status.documents?.indexed ?? status.indexed);
+    const downloadable = Number(
+      status.source?.downloadable_documents ?? status.source_downloadable
+    );
+    const sync = status.sync || {};
+    const progress =
+      sync.state === "extracting"
+        ? ` · 本轮 ${Number(sync.processed_documents).toLocaleString()} / ${Number(sync.pending_documents).toLocaleString()}`
+        : "";
+    const phase = {
+      discovering: " · 正在扫描 FDA",
+      extracting: " · 正在建立索引",
+      sleeping: " · 等待下轮同步",
+      failed: " · 上轮同步失败",
+    }[sync.state] || "";
+    state.latestStatusText =
+      `本地可搜索 ${indexed.toLocaleString()} 份 · FDA 可下载 ${downloadable.toLocaleString()} 份${phase}${progress}`;
+    elements.status.textContent = state.latestStatusText;
+    const source = status.source || {};
+    elements.status.title =
+      `FDA 报告 ${Number(source.reported_rows || 0).toLocaleString()} 行；` +
+      `稳定枚举 ${Number(source.enumerated_rows || 0).toLocaleString()} 行；` +
+      `不可下载 ${Number(source.unavailable_rows || 0).toLocaleString()} 行；` +
+      `重复链接 ${Number(source.duplicate_references || 0).toLocaleString()} 行；` +
+      `分页差值 ${Number(source.pagination_gap || 0).toLocaleString()} 行`;
+    state.latestIndexed = indexed;
+    if (state.searchIndexed === null) {
+      state.searchIndexed = indexed;
+    } else if (indexed > state.searchIndexed) {
+      elements.refreshResults.hidden = false;
+    }
   } catch {
-    elements.status.textContent = "索引状态不可用";
+    if (state.latestIndexed === null) {
+      elements.status.textContent = "索引状态不可用";
+    } else {
+      elements.status.textContent = `${state.latestStatusText} · 状态暂不可用`;
+    }
   }
+}
+
+function startStatusPolling() {
+  if (state.statusTimer !== null) clearInterval(state.statusTimer);
+  state.statusTimer = null;
+  if (document.hidden) return;
+  loadStatus();
+  state.statusTimer = setInterval(loadStatus, 30000);
 }
 
 elements.form.addEventListener("submit", (event) => {
@@ -194,6 +246,7 @@ elements.clear.addEventListener("click", () => {
   elements.year.value = "";
   runSearch(true);
 });
+elements.refreshResults.addEventListener("click", () => runSearch(true));
 elements.previous.addEventListener("click", () => {
   state.offset = Math.max(0, state.offset - PAGE_SIZE);
   runSearch();
@@ -210,5 +263,6 @@ setInitialFilter(elements.recordType, "record_type");
 setInitialFilter(elements.state, "state");
 setInitialFilter(elements.year, "year");
 state.offset = Number(initial.get("offset")) || 0;
-loadStatus();
+document.addEventListener("visibilitychange", startStatusPolling);
+startStatusPolling();
 runSearch();

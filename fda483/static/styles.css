@@ -148,6 +148,17 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 }
 .results-heading h2 { margin: 0; font-size: 1.35rem; }
 .results-heading p { margin: .25rem 0 0; color: var(--muted); font-size: .875rem; }
+.result-summary-row { display: flex; align-items: center; flex-wrap: wrap; gap: .25rem .75rem; }
+.new-records-button {
+  padding: .2rem 0;
+  border: 0;
+  color: var(--blue-dark);
+  background: transparent;
+  font-size: .875rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+}
 .source-note { text-align: right; }
 .results { display: grid; }
 .result {

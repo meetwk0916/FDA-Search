@@ -11,6 +11,7 @@ Install dependencies with `python3 -m pip install --target .deps -r requirements
 Set `PYTHONPATH=.deps:.` for all commands.
 
 - Index or resume: `python3 -m fda483.indexer --workers 2`
+- Roll continuously: `python3 -m fda483.indexer --workers 2 --interval 43200`
 - Serve locally: `python3 -m fda483.server`
 - Test: `python3 -m unittest`
 - Runtime status: `curl http://127.0.0.1:8080/api/status`
@@ -35,5 +36,6 @@ Set `PYTHONPATH=.deps:.` for all commands.
 
 ## Current state
 
-The legacy index contains Form 483 records. Re-run the resumable indexer to
-discover all available record types; use `/api/status` as the live authority.
+The resumable global index discovers all available record types. Production
+indexing runs as a single locked process on a 12-hour rolling interval; use
+`/api/status` as the live authority.

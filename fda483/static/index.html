@@ -56,7 +56,12 @@
       <div class="results-heading">
         <div>
           <h2 id="results-heading">全部记录</h2>
-          <p id="result-summary" aria-live="polite">正在加载…</p>
+          <div class="result-summary-row">
+            <p id="result-summary" aria-live="polite">正在加载…</p>
+            <button class="new-records-button" id="refresh-results" type="button" hidden>
+              有新记录，刷新结果
+            </button>
+          </div>
         </div>
         <p class="source-note">数据来源：U.S. Food &amp; Drug Administration</p>
       </div>

@@ -1,19 +1,28 @@
 import json
+import os
+import tempfile
+import threading
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlparse
 
 import onnxruntime.capi.onnxruntime_pybind11_state as onnx_errors
 
+from fda483.database import connect
 from fda483.indexer import (
+    Discovery,
     Record,
+    acquire_index_lock,
     clean_cell,
     datatable_parameters,
     discover_api_config,
     extract_pdf,
     has_useful_text,
+    index_records,
     list_records,
     parse_record,
+    run_periodically,
     row_identity,
 )
 
@@ -76,6 +85,135 @@ class IndexerTests(unittest.TestCase):
         second = ["01/02/2026", "Company A", "1", '<a href="/media/1/download">483</a>']
         self.assertNotEqual(row_identity(first), row_identity(second))
 
+    def test_database_lock_rejects_a_second_indexer(self):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "index.sqlite3"
+            with acquire_index_lock(database):
+                with self.assertRaisesRegex(
+                    RuntimeError, f"already running.*PID {os.getpid()}"
+                ):
+                    with acquire_index_lock(database):
+                        pass
+
+    def test_periodic_runner_repeats_after_the_interval_until_stopped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stop_event = threading.Event()
+            cycles = []
+            waits = []
+
+            def cycle():
+                cycles.append(len(cycles) + 1)
+                if len(cycles) == 2:
+                    stop_event.set()
+
+            run_periodically(
+                Path(directory) / "index.sqlite3",
+                interval=43200,
+                cycle=cycle,
+                stop_event=stop_event,
+                wait=lambda seconds: waits.append(seconds) or False,
+            )
+
+            self.assertEqual(cycles, [1, 2])
+            self.assertEqual(waits, [43200])
+
+    def test_periodic_runner_retries_known_cycle_failures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            stop_event = threading.Event()
+            attempts = []
+
+            def cycle():
+                attempts.append(len(attempts) + 1)
+                if len(attempts) == 1:
+                    raise RuntimeError("temporary FDA failure")
+                stop_event.set()
+
+            run_periodically(
+                Path(directory) / "index.sqlite3",
+                interval=60,
+                cycle=cycle,
+                stop_event=stop_event,
+                wait=lambda _seconds: False,
+            )
+
+            self.assertEqual(attempts, [1, 2])
+
+    @patch("fda483.indexer.list_records")
+    @patch("fda483.indexer.extract_pdf")
+    def test_indexing_stops_submitting_documents_after_shutdown(
+        self, extract_pdf, list_records
+    ):
+        with tempfile.TemporaryDirectory() as directory:
+            stop_event = threading.Event()
+            records = [
+                Record(str(index), "", f"Company {index}", "", "", "", "", "", "")
+                for index in range(3)
+            ]
+            list_records.return_value = Discovery(records, 3, 3, 0, 0, 0)
+
+            def extract(record):
+                stop_event.set()
+                return {
+                    "record": record,
+                    "filename": "",
+                    "page_count": 1,
+                    "content": "indexed content",
+                    "status": "indexed",
+                    "error": "",
+                }
+
+            extract_pdf.side_effect = extract
+            _, completed = index_records(
+                Path(directory) / "index.sqlite3",
+                workers=1,
+                stop_event=stop_event,
+            )
+
+            self.assertEqual(completed, 1)
+            self.assertEqual(extract_pdf.call_count, 1)
+            connection = connect(Path(directory) / "index.sqlite3")
+            sync_state = dict(
+                connection.execute("SELECT key, value FROM sync_state").fetchall()
+            )
+            connection.close()
+            self.assertEqual(sync_state["sync_status"], "idle")
+            self.assertEqual(sync_state["sync_phase"], "idle")
+            self.assertEqual(sync_state["sync_pending"], "3")
+            self.assertEqual(sync_state["sync_processed"], "1")
+            self.assertEqual(sync_state["source_enumerated"], "3")
+            self.assertIn("sync_completed_at", sync_state)
+            self.assertNotIn("sync_last_success_at", sync_state)
+
+    @patch(
+        "fda483.indexer.list_records",
+        side_effect=RuntimeError("FDA discovery unavailable"),
+    )
+    def test_failed_one_shot_cycle_persists_failure_state(self, _list_records):
+        with tempfile.TemporaryDirectory() as directory:
+            database = Path(directory) / "index.sqlite3"
+            connection = connect(database)
+            connection.execute(
+                "INSERT INTO sync_state(key, value) VALUES "
+                "('sync_completed_at', 'old completion')"
+            )
+            connection.commit()
+            connection.close()
+
+            with self.assertRaisesRegex(RuntimeError, "discovery unavailable"):
+                index_records(database)
+
+            connection = connect(database)
+            sync_state = dict(
+                connection.execute("SELECT key, value FROM sync_state").fetchall()
+            )
+            connection.close()
+            self.assertEqual(sync_state["sync_status"], "failed")
+            self.assertEqual(sync_state["sync_phase"], "failed")
+            self.assertEqual(
+                sync_state["sync_last_error"], "FDA discovery unavailable"
+            )
+            self.assertNotEqual(sync_state["sync_completed_at"], "old completion")
+
     @patch("fda483.indexer.fetch")
     def test_discovery_accepts_a_stable_gap_in_fda_pagination(self, fetch):
         settings = (
@@ -106,12 +244,18 @@ class IndexerTests(unittest.TestCase):
             return json.dumps({"recordsFiltered": 2, "data": data}).encode(), {}
 
         fetch.side_effect = response
-        records, available, unavailable = list_records(
+        discovery = list_records(
             batch_size=100, max_passes=10, stable_passes_required=2
         )
-        self.assertEqual([record.record_type for record in records], ["Warning Letter"])
-        self.assertEqual(available, 2)
-        self.assertEqual(unavailable, 0)
+        self.assertEqual(
+            [record.record_type for record in discovery.records],
+            ["Warning Letter"],
+        )
+        self.assertEqual(discovery.reported_rows, 2)
+        self.assertEqual(discovery.enumerated_rows, 1)
+        self.assertEqual(discovery.unavailable_rows, 0)
+        self.assertEqual(discovery.duplicate_references, 0)
+        self.assertEqual(discovery.pagination_gap, 1)
         self.assertLess(fetch.call_count, 10)
 
     @patch("fda483.indexer.extract_pages", return_value=([], []))

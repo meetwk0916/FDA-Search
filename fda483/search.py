@@ -136,20 +136,47 @@ def index_status(database: str | Path) -> dict[str, object]:
         FROM documents
         """
     ).fetchone()
-    source_values = {
-        row["key"]: int(row["value"])
-        for row in connection.execute(
-            "SELECT key, value FROM sync_state "
-            "WHERE key IN ("
-            "'source_total', 'source_unavailable', 'source_downloadable')"
-        )
+    sync_values = {
+        state_row["key"]: state_row["value"]
+        for state_row in connection.execute("SELECT key, value FROM sync_state")
     }
     connection.close()
+
+    def integer(key: str, default: int = 0) -> int:
+        return int(sync_values.get(key, default))
+
     status = {key: row[key] or 0 for key in row.keys()}
-    status["source_total"] = source_values.get("source_total", status["total"])
-    status["source_unavailable"] = source_values.get("source_unavailable", 0)
-    status["source_downloadable"] = source_values.get(
-        "source_downloadable",
-        status["source_total"] - status["source_unavailable"],
+    status["source_total"] = integer("source_total", status["total"])
+    status["source_unavailable"] = integer("source_unavailable")
+    status["source_downloadable"] = integer(
+        "source_downloadable", status["source_total"] - status["source_unavailable"]
     )
+    status["source"] = {
+        "reported_rows": status["source_total"],
+        "enumerated_rows": integer(
+            "source_enumerated",
+            status["source_downloadable"] + status["source_unavailable"],
+        ),
+        "downloadable_documents": status["source_downloadable"],
+        "unavailable_rows": status["source_unavailable"],
+        "duplicate_references": integer("source_duplicates"),
+        "pagination_gap": integer("source_pagination_gap"),
+    }
+    status["sync"] = {
+        "state": sync_values.get("sync_status", "idle"),
+        "phase": sync_values.get("sync_phase", "idle"),
+        "started_at": sync_values.get("sync_started_at") or None,
+        "completed_at": sync_values.get("sync_completed_at") or None,
+        "last_success_at": sync_values.get("sync_last_success_at") or None,
+        "last_error": sync_values.get("sync_last_error") or None,
+        "pending_documents": integer("sync_pending"),
+        "processed_documents": integer("sync_processed"),
+    }
+    status["documents"] = {
+        "stored": status["total"],
+        "indexed": status["indexed"],
+        "ocr_required": status["ocr_required"],
+        "errors": status["errors"],
+        "updated_at": status["updated_at"],
+    }
     return status

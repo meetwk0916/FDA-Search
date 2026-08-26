@@ -18,8 +18,9 @@ class SearchTests(unittest.TestCase):
             INSERT INTO documents (
                 media_id, record_type, record_date, company, fei, state, country,
                 establishment_type, publish_date, download_url, filename,
-                page_count, content, extraction_status, indexed_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                page_count, content, extraction_status, extraction_version,
+                indexed_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 "193964",
@@ -37,6 +38,7 @@ class SearchTests(unittest.TestCase):
                 "The responsibilities and procedures applicable to the "
                 "quality control unit are not fully followed.",
                 "indexed",
+                2,
                 datetime.now(UTC).isoformat(),
             ),
         )
@@ -88,20 +90,43 @@ class SearchTests(unittest.TestCase):
 
     def test_status_uses_available_source_total(self):
         connection = connect(self.database)
-        connection.execute(
-            "INSERT INTO sync_state(key, value) VALUES ('source_total', '2154')"
-        )
-        connection.execute(
-            "INSERT INTO sync_state(key, value) VALUES ('source_unavailable', '33')"
-        )
-        connection.execute(
-            "INSERT INTO sync_state(key, value) VALUES ('source_downloadable', '2120')"
+        connection.executemany(
+            "INSERT INTO sync_state(key, value) VALUES (?, ?)",
+            [
+                ("source_total", "3163"),
+                ("source_enumerated", "3122"),
+                ("source_unavailable", "153"),
+                ("source_downloadable", "2956"),
+                ("source_duplicates", "13"),
+                ("source_pagination_gap", "41"),
+                ("sync_status", "extracting"),
+                ("sync_phase", "extracting"),
+                ("sync_pending", "2637"),
+                ("sync_processed", "75"),
+                ("sync_started_at", "2026-08-26T06:00:00+00:00"),
+                ("sync_last_error", ""),
+            ],
         )
         connection.commit()
         connection.close()
         status = index_status(self.database)
-        self.assertEqual(status["source_total"], 2154)
-        self.assertEqual(status["source_downloadable"], 2120)
+        self.assertEqual(status["source_total"], 3163)
+        self.assertEqual(status["source_downloadable"], 2956)
+        self.assertEqual(
+            status["source"],
+            {
+                "reported_rows": 3163,
+                "enumerated_rows": 3122,
+                "downloadable_documents": 2956,
+                "unavailable_rows": 153,
+                "duplicate_references": 13,
+                "pagination_gap": 41,
+            },
+        )
+        self.assertEqual(status["sync"]["state"], "extracting")
+        self.assertEqual(status["sync"]["pending_documents"], 2637)
+        self.assertEqual(status["sync"]["processed_documents"], 75)
+        self.assertEqual(status["documents"]["indexed"], 1)
 
 
 if __name__ == "__main__":

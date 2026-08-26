@@ -1,19 +1,24 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import html
 import json
+import os
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
+from typing import Callable, Iterator, TextIO
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 
@@ -52,6 +57,7 @@ ONNX_RUNTIME_ERRORS = (
     onnx_errors.NotImplemented,
     onnx_errors.RuntimeException,
 )
+KNOWN_CYCLE_ERRORS = (RuntimeError, HTTPError, URLError, json.JSONDecodeError)
 
 
 @dataclass(frozen=True)
@@ -66,6 +72,115 @@ class Record:
     publish_date: str
     download_url: str
     record_type: str = "483"
+
+
+@dataclass(frozen=True)
+class Discovery:
+    records: list[Record]
+    reported_rows: int
+    enumerated_rows: int
+    unavailable_rows: int
+    duplicate_references: int
+    pagination_gap: int
+
+
+@contextmanager
+def acquire_index_lock(database: str | Path) -> Iterator[TextIO]:
+    database_path = Path(database).resolve()
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = database_path.with_name(database_path.name + ".lock")
+    lock_file = lock_path.open("a+")
+    try:
+        try:
+            fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            lock_file.seek(0)
+            owner = lock_file.read().strip() or "unknown"
+            raise RuntimeError(
+                f"an indexer is already running for {database_path} (PID {owner})"
+            ) from error
+        lock_file.seek(0)
+        lock_file.truncate()
+        lock_file.write(str(os.getpid()))
+        lock_file.flush()
+        yield lock_file
+    finally:
+        lock_file.close()
+
+
+def write_sync_state(
+    connection: sqlite3.Connection, **values: object
+) -> None:
+    connection.executemany(
+        "INSERT OR REPLACE INTO sync_state(key, value) VALUES (?, ?)",
+        [(key, "" if value is None else str(value)) for key, value in values.items()],
+    )
+
+
+def persist_sync_state(database: str | Path, **values: object) -> None:
+    connection = connect(database)
+    write_sync_state(connection, **values)
+    connection.commit()
+    connection.close()
+
+
+def run_periodically(
+    database: str | Path,
+    interval: int,
+    cycle: Callable[[], object],
+    stop_event: threading.Event,
+    wait: Callable[[float], bool] | None = None,
+) -> None:
+    if interval < 1:
+        raise ValueError("interval must be a positive integer")
+    wait_for_stop = wait or stop_event.wait
+    with acquire_index_lock(database):
+        while not stop_event.is_set():
+            persist_sync_state(
+                database,
+                sync_status="discovering",
+                sync_phase="discovering",
+                sync_started_at=datetime.now(UTC).isoformat(),
+                sync_completed_at="",
+                sync_last_error="",
+                sync_pending=0,
+                sync_processed=0,
+            )
+            if stop_event.is_set():
+                persist_sync_state(
+                    database,
+                    sync_status="idle",
+                    sync_phase="idle",
+                )
+                break
+            try:
+                cycle()
+            except KNOWN_CYCLE_ERRORS as error:
+                completed_at = datetime.now(UTC).isoformat()
+                persist_sync_state(
+                    database,
+                    sync_status="failed",
+                    sync_phase="failed",
+                    sync_last_error=str(error),
+                    sync_completed_at=completed_at,
+                )
+                print(f"Indexing cycle failed: {error}", file=sys.stderr, flush=True)
+            else:
+                state = "idle" if stop_event.is_set() else "sleeping"
+                persist_sync_state(
+                    database,
+                    sync_status=state,
+                    sync_phase=state,
+                )
+            if stop_event.is_set():
+                break
+            if wait_for_stop(interval):
+                persist_sync_state(
+                    database,
+                    sync_status="idle",
+                    sync_phase="idle",
+                )
+                break
 
 
 def fetch(url: str, timeout: int = 90) -> tuple[bytes, dict[str, str]]:
@@ -223,7 +338,7 @@ def list_records(
     batch_size: int = 100,
     max_passes: int = 20,
     stable_passes_required: int = 3,
-) -> tuple[list[Record], int, int]:
+) -> Discovery:
     if limit is not None and limit < 1:
         raise ValueError("limit must be a positive integer")
     page, _ = fetch(READING_ROOM_URL)
@@ -302,7 +417,18 @@ def list_records(
     selected = list(records.values())
     if limit is not None:
         selected = selected[:limit]
-    return selected, available, len(unavailable)
+    unavailable_rows = len(unavailable)
+    duplicate_references = max(
+        0, len(seen_rows) - unavailable_rows - len(records)
+    )
+    return Discovery(
+        records=selected,
+        reported_rows=available,
+        enumerated_rows=len(seen_rows),
+        unavailable_rows=unavailable_rows,
+        duplicate_references=duplicate_references,
+        pagination_gap=max(0, available - len(seen_rows)),
+    )
 
 
 def extract_pdf(record: Record) -> dict[str, object]:
@@ -407,58 +533,126 @@ def index_records(
     limit: int | None = None,
     workers: int = 2,
     refresh: bool = False,
+    stop_event: threading.Event | None = None,
 ) -> tuple[int, int]:
-    records, available, unavailable = list_records(limit)
+    stop_event = stop_event or threading.Event()
     connection = connect(database)
-    connection.execute(
-        "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('source_total', ?)",
-        (str(available),),
-    )
-    connection.execute(
-        "INSERT OR REPLACE INTO sync_state(key, value) VALUES "
-        "('source_unavailable', ?)",
-        (str(unavailable),),
-    )
-    connection.execute(
-        "INSERT OR REPLACE INTO sync_state(key, value) VALUES "
-        "('source_downloadable', ?)",
-        (str(len(records)),),
-    )
-    connection.execute(
-        "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('sync_started_at', ?)",
-        (datetime.now(UTC).isoformat(),),
+    write_sync_state(
+        connection,
+        sync_status="discovering",
+        sync_phase="discovering",
+        sync_started_at=datetime.now(UTC).isoformat(),
+        sync_completed_at="",
+        sync_last_error="",
+        sync_pending=0,
+        sync_processed=0,
     )
     connection.commit()
-    if unavailable:
-        print(
-            f"FDA lists {unavailable} records without a PDF download link; skipped.",
-            flush=True,
-        )
-    existing = {
-        row["media_id"]
-        for row in connection.execute(
-            "SELECT media_id FROM documents "
-            "WHERE extraction_status = 'indexed' AND extraction_version >= ?",
-            (EXTRACTION_VERSION,),
-        )
-    }
-    pending = records if refresh else [r for r in records if r.media_id not in existing]
-    completed = 0
-    with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(extract_pdf, record): record for record in pending}
-        for future in as_completed(futures):
-            result = future.result()
-            save_result(connection, result)
+    try:
+        if stop_event.is_set():
+            write_sync_state(
+                connection,
+                sync_status="idle",
+                sync_phase="idle",
+                sync_completed_at=datetime.now(UTC).isoformat(),
+            )
             connection.commit()
-            completed += 1
-            record = result["record"]
+            return 0, 0
+        discovery = list_records(limit)
+        records = discovery.records
+        unavailable = discovery.unavailable_rows
+        write_sync_state(
+            connection,
+            source_total=discovery.reported_rows,
+            source_enumerated=discovery.enumerated_rows,
+            source_unavailable=unavailable,
+            source_downloadable=len(records),
+            source_duplicates=discovery.duplicate_references,
+            source_pagination_gap=discovery.pagination_gap,
+            sync_status="extracting",
+            sync_phase="extracting",
+        )
+        connection.commit()
+        if unavailable:
             print(
-                f"[{completed}/{len(pending)}] {result['status']}: "
-                f"{record.company} ({record.media_id})",
+                f"FDA lists {unavailable} records without a PDF download link; skipped.",
                 flush=True,
             )
-    connection.close()
-    return len(records), completed
+        existing = {
+            row["media_id"]
+            for row in connection.execute(
+                "SELECT media_id FROM documents "
+                "WHERE extraction_status = 'indexed' AND extraction_version >= ?",
+                (EXTRACTION_VERSION,),
+            )
+        }
+        pending = (
+            records
+            if refresh
+            else [record for record in records if record.media_id not in existing]
+        )
+        completed = 0
+        write_sync_state(
+            connection,
+            sync_pending=len(pending),
+            sync_processed=completed,
+        )
+        connection.commit()
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            pending_records = iter(pending)
+            futures = set()
+
+            def submit_available() -> None:
+                while len(futures) < workers and not stop_event.is_set():
+                    try:
+                        record = next(pending_records)
+                    except StopIteration:
+                        break
+                    futures.add(executor.submit(extract_pdf, record))
+
+            submit_available()
+            while futures:
+                done, futures = wait(futures, return_when=FIRST_COMPLETED)
+                for future in done:
+                    result = future.result()
+                    save_result(connection, result)
+                    completed += 1
+                    write_sync_state(connection, sync_processed=completed)
+                    connection.commit()
+                    record = result["record"]
+                    print(
+                        f"[{completed}/{len(pending)}] {result['status']}: "
+                        f"{record.company} ({record.media_id})",
+                        flush=True,
+                    )
+                submit_available()
+        completed_at = datetime.now(UTC).isoformat()
+        final_state = {
+            "sync_status": "idle",
+            "sync_phase": "idle",
+            "sync_completed_at": completed_at,
+            "sync_last_error": "",
+        }
+        if completed == len(pending):
+            final_state["sync_last_success_at"] = completed_at
+        write_sync_state(
+            connection,
+            **final_state,
+        )
+        connection.commit()
+        return len(records), completed
+    except KNOWN_CYCLE_ERRORS as error:
+        write_sync_state(
+            connection,
+            sync_status="failed",
+            sync_phase="failed",
+            sync_completed_at=datetime.now(UTC).isoformat(),
+            sync_last_error=str(error),
+        )
+        connection.commit()
+        raise
+    finally:
+        connection.close()
 
 
 def main() -> None:
@@ -467,13 +661,45 @@ def main() -> None:
     parser.add_argument("--limit", type=int, help="Index only the newest N records")
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--refresh", action="store_true")
+    parser.add_argument(
+        "--interval",
+        type=int,
+        metavar="SECONDS",
+        help="Repeat indexing after this many seconds",
+    )
     args = parser.parse_args()
-    try:
+    if args.interval is not None and args.interval < 1:
+        parser.error("--interval must be a positive integer")
+    stop_event = threading.Event()
+
+    def request_shutdown(_signum: int, _frame: object) -> None:
+        stop_event.set()
+
+    signal.signal(signal.SIGINT, request_shutdown)
+    signal.signal(signal.SIGTERM, request_shutdown)
+
+    def run_cycle() -> None:
         discovered, indexed = index_records(
-            args.database, args.limit, args.workers, args.refresh
+            args.database,
+            args.limit,
+            args.workers,
+            args.refresh,
+            stop_event,
         )
-        print(f"Discovered {discovered}; processed {indexed}.")
-    except (RuntimeError, HTTPError, URLError, json.JSONDecodeError) as error:
+        print(f"Discovered {discovered}; processed {indexed}.", flush=True)
+
+    try:
+        if args.interval is None:
+            with acquire_index_lock(args.database):
+                run_cycle()
+        else:
+            run_periodically(
+                args.database,
+                args.interval,
+                run_cycle,
+                stop_event,
+            )
+    except (*KNOWN_CYCLE_ERRORS, ValueError) as error:
         print(f"Indexing failed: {error}", file=sys.stderr)
         raise SystemExit(1) from error
 
