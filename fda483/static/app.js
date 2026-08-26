@@ -2,8 +2,8 @@ const PAGE_SIZE = 20;
 const state = {
   offset: 0,
   total: 0,
-  latestIndexed: null,
-  searchIndexed: null,
+  latestStored: null,
+  searchStored: null,
   statusTimer: null,
   latestStatusText: null,
 };
@@ -63,6 +63,25 @@ function addFilterOptions(select, values) {
 function setInitialFilter(select, name) {
   const value = initial.get(name) || "";
   if (value) select.add(new Option(value, value, true, true));
+}
+
+function hasActiveCriteria() {
+  return Boolean(
+    elements.query.value.trim() ||
+    elements.recordType.value ||
+    elements.state.value ||
+    elements.year.value
+  );
+}
+
+function updateResultSummary() {
+  if (hasActiveCriteria()) {
+    elements.summary.textContent =
+      `当前条件匹配 ${state.total.toLocaleString()} 条已收录文档`;
+    return;
+  }
+  elements.summary.textContent =
+    `已收录 ${state.total.toLocaleString()} 条 FDA 文档`;
 }
 
 function renderResult(record) {
@@ -153,10 +172,10 @@ async function runSearch(resetOffset = false) {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const payload = await response.json();
     state.total = payload.total;
-    if (state.latestIndexed !== null) state.searchIndexed = state.latestIndexed;
+    if (state.latestStored !== null) state.searchStored = state.latestStored;
     elements.refreshResults.hidden = true;
-    elements.heading.textContent = elements.query.value.trim() ? "搜索结果" : "全部记录";
-    elements.summary.textContent = `找到 ${payload.total.toLocaleString()} 条记录`;
+    elements.heading.textContent = hasActiveCriteria() ? "筛选结果" : "全部记录";
+    updateResultSummary();
     elements.results.replaceChildren(
       ...(payload.results.length
         ? payload.results.map(renderResult)
@@ -186,14 +205,15 @@ async function loadStatus() {
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const status = await response.json();
     const indexed = Number(status.documents?.indexed ?? status.indexed);
+    const stored = Number(status.documents?.stored ?? status.total);
+    const ocrRequired = Number(
+      status.documents?.ocr_required ?? status.ocr_required
+    );
+    const errors = Number(status.documents?.errors ?? status.errors);
     const downloadable = Number(
       status.source?.downloadable_documents ?? status.source_downloadable
     );
     const sync = status.sync || {};
-    const progress =
-      sync.state === "extracting"
-        ? ` · 本轮 ${Number(sync.processed_documents).toLocaleString()} / ${Number(sync.pending_documents).toLocaleString()}`
-        : "";
     const phase = {
       discovering: " · 正在扫描 FDA",
       extracting: " · 正在建立索引",
@@ -201,23 +221,22 @@ async function loadStatus() {
       failed: " · 上轮同步失败",
     }[sync.state] || "";
     state.latestStatusText =
-      `本地可搜索 ${indexed.toLocaleString()} 份 · FDA 可下载 ${downloadable.toLocaleString()} 份${phase}${progress}`;
+      `索引进度 ${stored.toLocaleString()} / ${downloadable.toLocaleString()} 份${phase}`;
     elements.status.textContent = state.latestStatusText;
     const source = status.source || {};
     elements.status.title =
-      `FDA 报告 ${Number(source.reported_rows || 0).toLocaleString()} 行；` +
-      `稳定枚举 ${Number(source.enumerated_rows || 0).toLocaleString()} 行；` +
-      `不可下载 ${Number(source.unavailable_rows || 0).toLocaleString()} 行；` +
-      `重复链接 ${Number(source.duplicate_references || 0).toLocaleString()} 行；` +
-      `分页差值 ${Number(source.pagination_gap || 0).toLocaleString()} 行`;
-    state.latestIndexed = indexed;
-    if (state.searchIndexed === null) {
-      state.searchIndexed = indexed;
-    } else if (indexed > state.searchIndexed) {
+      `已收录 ${stored.toLocaleString()} 份：正文完整 ${indexed.toLocaleString()} 份，` +
+      `待补 OCR ${ocrRequired.toLocaleString()} 份，失败 ${errors.toLocaleString()} 份。` +
+      `FDA 可下载目标 ${downloadable.toLocaleString()} 份；` +
+      `另有 ${Number(source.unavailable_rows || 0).toLocaleString()} 行不可下载。`;
+    state.latestStored = stored;
+    if (state.searchStored === null) {
+      state.searchStored = stored;
+    } else if (stored > state.searchStored) {
       elements.refreshResults.hidden = false;
     }
   } catch {
-    if (state.latestIndexed === null) {
+    if (state.latestStored === null) {
       elements.status.textContent = "索引状态不可用";
     } else {
       elements.status.textContent = `${state.latestStatusText} · 状态暂不可用`;
