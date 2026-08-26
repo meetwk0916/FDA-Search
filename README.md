@@ -82,6 +82,13 @@ python3 -m fda483.server
 python3 -m unittest
 ```
 
+## 部署状态
+
+当前只有本地运行环境，尚未部署公开生产站点。已批准的下一步是
+[GitHub Issue #2](https://github.com/meetwk0916/FDA/issues/2)：完成本地历史索引后，
+部署到腾讯云香港 Lighthouse 2C4G，并由 systemd timer 每 12 小时执行一次
+单 worker 增量索引。
+
 ## 数据与准确性
 
 - 元数据和 PDF 均来自 FDA 官方公开页面。

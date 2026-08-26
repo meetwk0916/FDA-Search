@@ -36,6 +36,7 @@ Set `PYTHONPATH=.deps:.` for all commands.
 
 ## Current state
 
-The resumable global index discovers all available record types. Production
-indexing runs as a single locked process on a 12-hour rolling interval; use
-`/api/status` as the live authority.
+The local resumable global backfill is running with one locked indexer and the
+local search service. Use `/api/status` as the live authority. There is no
+hosted production deployment yet; GitHub Issue #2 is the approved Tencent Cloud
+Hong Kong Lighthouse deployment specification.
