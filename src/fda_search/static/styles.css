@@ -33,7 +33,9 @@ body {
   margin: 0;
   color: var(--ink);
   background: var(--white);
-  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: "Segoe UI Variable Text", "Segoe UI", Roboto, "Noto Sans",
+    "Liberation Sans", Arial, "Microsoft YaHei UI", "PingFang SC",
+    "Noto Sans CJK SC", sans-serif;
   line-height: 1.55;
 }
 
@@ -78,6 +80,18 @@ a { color: var(--blue-dark); }
   color: var(--header-mark);
 }
 .index-status { color: var(--header-status); font-size: .8125rem; text-align: right; }
+.header-actions { display: flex; align-items: center; justify-content: flex-end; gap: .75rem; }
+.language-toggle {
+  padding: .3rem .65rem;
+  border: 1px solid var(--header-rule);
+  border-radius: var(--radius);
+  color: var(--white);
+  background: transparent;
+  font-size: .8125rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.language-toggle:hover { background: rgb(255 255 255 / 10%); }
 
 .search-section {
   padding: 2.5rem 0 2.25rem;
@@ -143,7 +157,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
   border-top: 1px solid var(--header-rule);
 }
 .filters div { display: grid; gap: .3rem; }
-.filters label { color: var(--header-mark); font-size: .75rem; font-weight: 600; }
+.filters label { color: var(--header-mark); font-size: .75rem; font-weight: 500; }
 .filters select {
   min-height: 2.5rem;
   min-width: 9rem;
@@ -244,7 +258,8 @@ footer { padding: 1.5rem 0; color: var(--footer-text); background: var(--navy-de
   .shell { width: min(100% - 1.25rem, 72rem); }
   .site-header { min-height: 4.75rem; }
   .header-inner { align-items: flex-start; padding-block: .75rem; }
-  .index-status { max-width: 10rem; }
+  .header-actions { align-items: flex-end; flex-direction: column-reverse; gap: .35rem; }
+  .index-status { max-width: 11rem; }
   .search-section { padding-top: 2.5rem; }
   .search-form { display: grid; gap: .65rem; }
   .search-form input { border-radius: var(--radius); }

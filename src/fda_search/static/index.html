@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="FDA OpenRecords Search：让散落在 PDF 和扫描件里的 FDA 公开记录真正可搜索">
+  <meta name="description" content="Search FDA public records across PDFs and scanned documents">
   <meta name="theme-color" content="#0a192b">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230a192b'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='24' font-weight='700' fill='%23bfe3f7' text-anchor='middle'%3EOR%3C/text%3E%3C/svg%3E">
   <title>FDA OpenRecords Search</title>
@@ -12,11 +12,16 @@
 <body>
   <header class="site-header">
     <div class="shell header-inner">
-      <a class="brand" href="/" aria-label="FDA OpenRecords Search 首页">
+      <a class="brand" href="/" aria-label="FDA OpenRecords Search home" data-i18n-aria-label="brandHome">
         <span class="brand-mark" aria-hidden="true">OR</span>
         <span>FDA OpenRecords Search</span>
       </a>
-      <div class="index-status" id="index-status">正在读取索引状态…</div>
+      <div class="header-actions">
+        <div class="index-status" id="index-status">Reading index status…</div>
+        <button class="language-toggle" id="language-toggle" type="button" aria-label="切换到中文" lang="zh-CN">
+          中文
+        </button>
+      </div>
     </div>
   </header>
 
@@ -27,28 +32,28 @@
         <h1 id="page-title">FDA OpenRecords Search</h1>
 
         <form class="search-form" id="search-form" role="search">
-          <label class="sr-only" for="query">搜索 FDA 记录</label>
+          <label class="sr-only" for="query" data-i18n="searchLabel">Search FDA records</label>
           <div class="search-input-wrap">
             <svg aria-hidden="true" viewBox="0 0 24 24"><path d="m21 21-4.4-4.4m2.4-5.1a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z"/></svg>
-            <input id="query" name="q" type="search" autocomplete="off" placeholder="例如：sterility testing、warning letter、企业名称">
+            <input id="query" name="q" type="search" autocomplete="off" placeholder="Try: sterility testing, warning letter, or a company name" data-i18n-placeholder="searchPlaceholder">
           </div>
-          <button type="submit">搜索</button>
+          <button type="submit" data-i18n="searchButton">Search</button>
         </form>
 
-        <div class="filters" aria-label="筛选条件">
+        <div class="filters" aria-label="Search filters" data-i18n-aria-label="filtersLabel">
           <div>
-            <label for="record-type" lang="en">Record type</label>
-            <select id="record-type" name="record_type"><option value="">全部类型</option></select>
+            <label for="record-type" data-i18n="recordTypeLabel">Record type</label>
+            <select id="record-type" name="record_type"><option value="" data-i18n="allTypes">All types</option></select>
           </div>
           <div>
-            <label for="state">州 / 地区</label>
-            <select id="state" name="state"><option value="">全部地区</option></select>
+            <label for="state" data-i18n="locationLabel">State / location</label>
+            <select id="state" name="state"><option value="" data-i18n="allLocations">All locations</option></select>
           </div>
           <div>
-            <label for="year">记录年份</label>
-            <select id="year" name="year"><option value="">全部年份</option></select>
+            <label for="year" data-i18n="yearLabel">Record year</label>
+            <select id="year" name="year"><option value="" data-i18n="allYears">All years</option></select>
           </div>
-          <button class="clear-button" id="clear-filters" type="button">清除筛选</button>
+          <button class="clear-button" id="clear-filters" type="button" data-i18n="clearFilters">Clear filters</button>
         </div>
       </div>
     </section>
@@ -56,26 +61,26 @@
     <section class="results-section shell" aria-labelledby="results-heading">
       <div class="results-heading">
         <div>
-          <h2 id="results-heading">全部记录</h2>
+          <h2 id="results-heading">All records</h2>
           <div class="result-summary-row">
-            <p id="result-summary" aria-live="polite">正在加载…</p>
+            <p id="result-summary" aria-live="polite">Loading…</p>
             <button class="new-records-button" id="refresh-results" type="button" hidden>
-              有新记录，刷新结果
+              New records available — refresh results
             </button>
           </div>
         </div>
       </div>
       <div id="results" class="results"></div>
-      <nav class="pagination" id="pagination" aria-label="搜索结果分页" hidden>
-        <button id="previous-page" type="button">上一页</button>
+      <nav class="pagination" id="pagination" aria-label="Search result pages" data-i18n-aria-label="paginationLabel" hidden>
+        <button id="previous-page" type="button" data-i18n="previousPage">Previous</button>
         <span id="page-status"></span>
-        <button id="next-page" type="button">下一页</button>
+        <button id="next-page" type="button" data-i18n="nextPage">Next</button>
       </nav>
     </section>
   </main>
 
   <footer>
-    <div class="shell">数据来源 U.S. Food &amp; Drug Administration · 结果以 FDA 官方原始文件为准</div>
+    <div class="shell" data-i18n="footer">Source: U.S. Food &amp; Drug Administration · Verify results against the original FDA document</div>
   </footer>
   <script src="/app.js" defer></script>
 </body>

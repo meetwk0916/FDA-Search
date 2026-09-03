@@ -57,6 +57,8 @@ Every result links back to the original FDA PDF for verification.
 - Search PDF text, company names, FEIs, states, countries, and establishment
   types
 - Filter by record type, location, and record year
+- Switch the browser interface between English and Simplified Chinese, with
+  automatic browser-language detection and a saved preference
 - Run fast local full-text searches with SQLite FTS5
 - Apply local ONNX OCR when native page text is insufficient
 - Resume interrupted indexing and run concurrent or scheduled refreshes

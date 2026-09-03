@@ -49,6 +49,7 @@ FDA OpenRecords Search 将这些公开记录转化为一个可在本地运行、
 - 跨 record type 索引 FDA OII Electronic Reading Room 中可下载的公开 PDF
 - 搜索 PDF 正文、企业名、FEI、州、国家和机构类型
 - 按 record type、地区和记录年份筛选
+- 浏览器界面支持中英文切换，首次按浏览器语言选择并记住用户偏好
 - 使用 SQLite FTS5 执行快速的本地全文检索
 - 对原生文本不足的页面执行本地 ONNX OCR
 - 支持并发提取、断点续建、定时增量刷新和单实例锁
