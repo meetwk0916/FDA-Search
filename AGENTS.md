@@ -12,20 +12,20 @@ the active delivery target.
 Install dependencies with `python3 -m pip install --target .deps -r requirements.txt`.
 Set `PYTHONPATH=.deps:src` for all commands.
 
-- Index or resume: `python3 -m fda483.indexer --workers 2`
-- Roll continuously: `python3 -m fda483.indexer --workers 2 --interval 43200`
-- Serve locally: `python3 -m fda483.server`
+- Index or resume: `python3 -m fda_search.indexer --workers 2`
+- Roll continuously: `python3 -m fda_search.indexer --workers 2 --interval 43200`
+- Serve locally: `python3 -m fda_search.server`
 - Test: `python3 -m unittest`
 - Runtime status: `curl http://127.0.0.1:8080/api/status`
 
 ## Stack and layout
 
 - Python standard-library HTTP server and crawler orchestration
-- Application package in `src/fda483/`
-- SQLite FTS5 in `src/fda483/database.py`
-- PDF extraction/OCR in `src/fda483/indexer.py`
-- Search contract in `src/fda483/search.py`
-- Browser UI in `src/fda483/static/`
+- Application package in `src/fda_search/`
+- SQLite FTS5 in `src/fda_search/database.py`
+- PDF extraction/OCR in `src/fda_search/indexer.py`
+- Search contract in `src/fda_search/search.py`
+- Browser UI in `src/fda_search/static/`
 - Generated dependencies and index data in ignored `.deps/` and `data/`
 
 ## Invariants

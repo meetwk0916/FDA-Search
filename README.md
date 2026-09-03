@@ -25,19 +25,19 @@ export PYTHONPATH=.deps:src
 先用少量记录验证：
 
 ```bash
-python3 -m fda483.indexer --limit 10
+python3 -m fda_search.indexer --limit 10
 ```
 
 抓取全部 FDA 公开记录：
 
 ```bash
-python3 -m fda483.indexer --workers 2
+python3 -m fda_search.indexer --workers 2
 ```
 
 持续滚动刷新（推荐每 12 小时一轮）：
 
 ```bash
-python3 -m fda483.indexer --workers 2 --interval 43200
+python3 -m fda_search.indexer --workers 2 --interval 43200
 ```
 
 索引器使用数据库级单实例锁；同一数据库已有索引进程时，重复启动会明确失败。
@@ -45,7 +45,7 @@ python3 -m fda483.indexer --workers 2 --interval 43200
 
 索引器支持断点续建；已成功索引的文档会自动跳过。完整下载和文本提取需要
 较长时间及足够磁盘空间。数据库
-默认保存在 `data/fda483.sqlite3`，原始 PDF 不会持久保存。
+默认保存在 `data/fda_search.sqlite3`，原始 PDF 不会持久保存。
 FDA 元数据中少量记录的下载地址为 `/na`，索引器会明确计数并跳过这些
 无法取得原文的条目。
 索引版本会记录逐页 OCR 校验能力；提取规则升级后，旧版本记录会自动重新处理。
@@ -55,13 +55,13 @@ FDA media ID 去重，直到不再发现新的 PDF 链接。
 重新提取已有记录：
 
 ```bash
-python3 -m fda483.indexer --refresh --workers 2
+python3 -m fda_search.indexer --refresh --workers 2
 ```
 
 ## 启动搜索
 
 ```bash
-python3 -m fda483.server
+python3 -m fda_search.server
 ```
 
 打开 <http://127.0.0.1:8080>。可搜索 PDF 正文、企业名、FEI、州和机构类型，

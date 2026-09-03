@@ -3,9 +3,9 @@ import unittest
 from datetime import UTC, datetime
 from pathlib import Path
 
-from fda483.database import connect
-from fda483.search import search_documents
-from fda483.search import index_status
+from fda_search.database import connect
+from fda_search.search import index_status
+from fda_search.search import search_documents
 
 
 class SearchTests(unittest.TestCase):

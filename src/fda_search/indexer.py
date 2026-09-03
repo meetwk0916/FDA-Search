@@ -30,7 +30,7 @@ from pypdf import PdfReader
 from pypdf.errors import PyPdfError
 from rapidocr_onnxruntime import RapidOCR
 
-from .database import connect
+from .database import DEFAULT_DATABASE, connect
 
 FDA_ORIGIN = "https://www.fda.gov"
 READING_ROOM_URL = (
@@ -71,7 +71,7 @@ class Record:
     establishment_type: str
     publish_date: str
     download_url: str
-    record_type: str = "483"
+    record_type: str
 
 
 @dataclass(frozen=True)
@@ -657,7 +657,7 @@ def index_records(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Index FDA reading-room PDF full text")
-    parser.add_argument("--database", default="data/fda483.sqlite3")
+    parser.add_argument("--database", default=DEFAULT_DATABASE)
     parser.add_argument("--limit", type=int, help="Index only the newest N records")
     parser.add_argument("--workers", type=int, default=2)
     parser.add_argument("--refresh", action="store_true")

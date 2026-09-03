@@ -9,8 +9,8 @@ from urllib.parse import parse_qs, urlparse
 
 import onnxruntime.capi.onnxruntime_pybind11_state as onnx_errors
 
-from fda483.database import connect
-from fda483.indexer import (
+from fda_search.database import connect
+from fda_search.indexer import (
     Discovery,
     Record,
     acquire_index_lock,
@@ -138,15 +138,17 @@ class IndexerTests(unittest.TestCase):
 
             self.assertEqual(attempts, [1, 2])
 
-    @patch("fda483.indexer.list_records")
-    @patch("fda483.indexer.extract_pdf")
+    @patch("fda_search.indexer.list_records")
+    @patch("fda_search.indexer.extract_pdf")
     def test_indexing_stops_submitting_documents_after_shutdown(
         self, extract_pdf, list_records
     ):
         with tempfile.TemporaryDirectory() as directory:
             stop_event = threading.Event()
             records = [
-                Record(str(index), "", f"Company {index}", "", "", "", "", "", "")
+                Record(
+                    str(index), "", f"Company {index}", "", "", "", "", "", "", "Test"
+                )
                 for index in range(3)
             ]
             list_records.return_value = Discovery(records, 3, 3, 0, 0, 0)
@@ -185,7 +187,7 @@ class IndexerTests(unittest.TestCase):
             self.assertNotIn("sync_last_success_at", sync_state)
 
     @patch(
-        "fda483.indexer.list_records",
+        "fda_search.indexer.list_records",
         side_effect=RuntimeError("FDA discovery unavailable"),
     )
     def test_failed_one_shot_cycle_persists_failure_state(self, _list_records):
@@ -214,7 +216,7 @@ class IndexerTests(unittest.TestCase):
             )
             self.assertNotEqual(sync_state["sync_completed_at"], "old completion")
 
-    @patch("fda483.indexer.fetch")
+    @patch("fda_search.indexer.fetch")
     def test_discovery_accepts_a_stable_gap_in_fda_pagination(self, fetch):
         settings = (
             '{"datatables":{"id":{"ajax":{"url":"/datatables/views/ajax",'
@@ -258,21 +260,43 @@ class IndexerTests(unittest.TestCase):
         self.assertEqual(discovery.pagination_gap, 1)
         self.assertLess(fetch.call_count, 10)
 
-    @patch("fda483.indexer.extract_pages", return_value=([], []))
-    @patch("fda483.indexer.fetch", return_value=(b"%PDF-1.4", {}))
+    @patch("fda_search.indexer.extract_pages", return_value=([], []))
+    @patch("fda_search.indexer.fetch", return_value=(b"%PDF-1.4", {}))
     def test_zero_page_pdf_is_saved_as_error(self, _fetch, _extract):
-        record = Record("1", "", "Test", "", "", "", "", "", "https://www.fda.gov/media/1/download")
+        record = Record(
+            "1",
+            "",
+            "Test",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "https://www.fda.gov/media/1/download",
+            "Test",
+        )
         result = extract_pdf(record)
         self.assertEqual(result["status"], "error")
         self.assertIn("zero pages", result["error"])
 
     @patch(
-        "fda483.indexer.extract_pages",
+        "fda_search.indexer.extract_pages",
         side_effect=onnx_errors.InvalidArgument("invalid OCR input"),
     )
-    @patch("fda483.indexer.fetch", return_value=(b"%PDF-1.4", {}))
+    @patch("fda_search.indexer.fetch", return_value=(b"%PDF-1.4", {}))
     def test_onnx_error_is_isolated_to_one_document(self, _fetch, _extract):
-        record = Record("1", "", "Test", "", "", "", "", "", "https://www.fda.gov/media/1/download")
+        record = Record(
+            "1",
+            "",
+            "Test",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "https://www.fda.gov/media/1/download",
+            "Test",
+        )
         result = extract_pdf(record)
         self.assertEqual(result["status"], "error")
         self.assertIn("invalid OCR input", result["error"])

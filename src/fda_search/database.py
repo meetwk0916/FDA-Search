@@ -4,6 +4,9 @@ import sqlite3
 from pathlib import Path
 
 
+DEFAULT_DATABASE = Path("data/fda_search.sqlite3")
+
+
 SCHEMA = """
 PRAGMA journal_mode = WAL;
 CREATE TABLE IF NOT EXISTS documents (
