@@ -74,14 +74,14 @@ class SearchHandler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve the FDA global search app")
+    parser = argparse.ArgumentParser(description="Serve FDA OpenRecords Search")
     parser.add_argument("--database", default=DEFAULT_DATABASE)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
     args = parser.parse_args()
     SearchHandler.database = Path(args.database)
     server = ThreadingHTTPServer((args.host, args.port), SearchHandler)
-    print(f"FDA global search: http://{args.host}:{args.port}")
+    print(f"FDA OpenRecords Search: http://{args.host}:{args.port}")
     server.serve_forever()
 
 

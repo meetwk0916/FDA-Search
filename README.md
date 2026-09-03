@@ -1,68 +1,109 @@
-# FDA Global Full-text Search
+# FDA OpenRecords Search
 
-一个面向 [FDA Office of Inspections and Investigations (OII) Electronic
-Reading Room](https://www.fda.gov/about-fda/office-inspections-and-investigations/oii-foia-electronic-reading-room)
-公开记录的本地全文搜索工具。
+**English** | [简体中文](README.zh-CN.md)
 
-项目从 FDA 官方页面发现可下载的 PDF，将元数据和正文写入 SQLite FTS5，
-并提供轻量级浏览器界面。扫描件会在常规文本提取不足时自动使用本地 ONNX OCR；
-搜索结果始终保留 FDA 官方原始文件链接。
+**Make FDA public records buried in PDFs and scans actually searchable.**
+
+FDA OpenRecords Search is a local full-text search engine for public records in
+the [FDA Office of Inspections and Investigations (OII) Electronic Reading
+Room](https://www.fda.gov/about-fda/office-inspections-and-investigations/oii-foia-electronic-reading-room).
+
+It discovers downloadable PDFs from official FDA pages, stores their metadata
+and extracted text in SQLite FTS5, and provides a lightweight browser interface.
+When a page does not contain enough native text, the indexer automatically
+falls back to local ONNX OCR. Every search result retains a link to the original
+FDA document.
 
 > [!IMPORTANT]
-> 本项目不是 FDA 官方产品，也不隶属于或代表 FDA。索引内容可能因网站更新、
-> PDF 解析或 OCR 识别而不完整；需要作出判断时，请以结果中的 FDA 原始文件为准。
+> This is an independent open-source project. It is not an official FDA product
+> and is not affiliated with or endorsed by the FDA. Website changes, PDF
+> extraction, and OCR may produce incomplete results. Always verify important
+> information against the original FDA document linked from each result.
 
-## 功能
+## The problem this project solves
 
-- 跨 record type 索引 FDA OII Electronic Reading Room 中可下载的公开 PDF
-- 搜索 PDF 正文、企业名、FEI、州、国家和机构类型
-- 按 record type、地区和记录年份筛选
-- 使用 SQLite FTS5 执行快速的本地全文检索
-- 对原生文本不足的页面执行本地 ONNX OCR
-- 支持并发提取、断点续建、定时增量刷新和单实例锁
-- 显示发现、提取和 OCR 状态，不让单个异常 PDF 中断整个索引任务
-- 不持久保存下载的 PDF，仅保存搜索所需的元数据和提取文本
+The FDA OII Electronic Reading Room publishes inspection, compliance, and
+public-disclosure records primarily as individual PDF files. Its official
+listing is useful when you already know the relevant metadata, but it is not
+designed to answer cross-document questions such as:
 
-## 工作方式
+- Which records mention a specific manufacturing, quality, or sterility issue?
+- Where has a company, FEI, or establishment type appeared over time?
+- Which record types, states, or countries contain the same term?
+- Does the body of a scanned PDF contain a term of interest?
+
+File names and list filters cannot search inside PDFs. Opening documents one by
+one is slow, and scanned files often have no searchable text layer at all.
+Browsing record types separately also makes research and cross-checking harder.
+
+FDA OpenRecords Search turns those public files into a reproducible local
+full-text index:
+
+1. Discover records on official FDA pages and retain their source links.
+2. Extract text from every PDF and run OCR on pages with insufficient text.
+3. Store normalized metadata and document text in SQLite FTS5.
+4. Search across record types with filters, contextual snippets, and sync
+   status.
+
+The project reduces the time needed to **find relevant source records**. It
+does not replace regulatory or compliance judgment, characterize violations,
+infer redacted content, or present OCR output as an authoritative conclusion.
+Every result links back to the original FDA PDF for verification.
+
+## Features
+
+- Index downloadable public PDFs across record types in the FDA OII Electronic
+  Reading Room
+- Search PDF text, company names, FEIs, states, countries, and establishment
+  types
+- Filter by record type, location, and record year
+- Run fast local full-text searches with SQLite FTS5
+- Apply local ONNX OCR when native page text is insufficient
+- Resume interrupted indexing and run concurrent or scheduled refreshes
+- Report discovery, extraction, and OCR status
+- Isolate malformed PDF and OCR failures to a single document
+- Preserve official FDA source links without retaining downloaded PDFs
+
+## How it works
 
 ```text
 FDA Electronic Reading Room
           |
           v
-  发现记录和官方 PDF 链接
+ Discover records and official PDF links
           |
           v
-   PDF 文本提取 -> 文本不足时逐页 OCR
+ PDF text extraction -> per-page OCR when needed
           |
           v
       SQLite + FTS5
           |
           v
-   本地 HTTP API + 浏览器界面
+ Local HTTP API + browser interface
 ```
 
-所有网络请求仅面向 `fda.gov`。默认数据库为
-`data/fda_search.sqlite3`，该目录已被 Git 忽略。
+All network requests are restricted to `fda.gov`. The default database is
+`data/fda_search.sqlite3`, and the `data/` directory is ignored by Git.
 
-## 环境要求
+## Requirements
 
-- Python 3.11 或更高版本
-- Linux、WSL 或其他提供 `fcntl` 的类 Unix 环境
-- SQLite 构建包含 FTS5（常见 Python 发行版默认包含）
-- 足够的磁盘空间和网络时间；完整索引需要下载并处理全部公开 PDF
+- Python 3.11 or later
+- Linux, WSL, or another Unix-like environment that provides `fcntl`
+- A SQLite build with FTS5 support, included in most Python distributions
+- Sufficient disk space and network time to process the full public collection
 
-## 快速开始
+## Quick start
 
-### 1. 克隆仓库
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/meetwk0916/FDA.git
 cd FDA
 ```
 
-### 2. 安装依赖
+### 2. Install dependencies
 
-推荐使用虚拟环境：
+Using a virtual environment is recommended:
 
 ```bash
 python3 -m venv .venv
@@ -71,89 +112,99 @@ python3 -m pip install -r requirements.txt
 export PYTHONPATH=src
 ```
 
-如果环境中无法创建虚拟环境，也可以把依赖安装到已忽略的项目目录：
+If your environment cannot create a virtual environment, install dependencies
+into the ignored `.deps/` directory:
 
 ```bash
 python3 -m pip install --target .deps -r requirements.txt
 export PYTHONPATH=.deps:src
 ```
 
-后续命令均需要保留对应的虚拟环境或 `PYTHONPATH` 设置。
+Keep the corresponding virtual environment or `PYTHONPATH` active for the
+commands below.
 
-### 3. 建立一个小型测试索引
+### 3. Build a small test index
 
 ```bash
 python3 -m fda_search.indexer --limit 10
 ```
 
-### 4. 启动搜索服务
+### 4. Start the search service
 
 ```bash
 python3 -m fda_search.server
 ```
 
-打开 <http://127.0.0.1:8080>。
+Open <http://127.0.0.1:8080>.
 
-## 建立和维护索引
+## Building and maintaining the index
 
-抓取全部可下载记录：
+Index all downloadable records:
 
 ```bash
 python3 -m fda_search.indexer --workers 2
 ```
 
-每 12 小时执行一次增量刷新：
+Run an incremental refresh every 12 hours:
 
 ```bash
 python3 -m fda_search.indexer --workers 2 --interval 43200
 ```
 
-强制重新提取已有记录：
+Force re-extraction of existing records:
 
 ```bash
 python3 -m fda_search.indexer --refresh --workers 2
 ```
 
-使用其他数据库文件：
+Use a different database file:
 
 ```bash
 python3 -m fda_search.indexer --database /path/to/index.sqlite3
 python3 -m fda_search.server --database /path/to/index.sqlite3
 ```
 
-索引器具有以下运行特性：
+Indexer behavior:
 
-- 已成功处理且提取版本未变化的文档会自动跳过。
-- 提取规则升级后，旧版本记录会自动重新处理。
-- 同一数据库只允许一个索引进程，重复启动会明确报错。
-- 收到 `SIGINT` 或 `SIGTERM` 后停止提交新文档，并等待正在处理的文档写入。
-- FDA 元数据中没有有效下载地址的记录会被计数并跳过。
-- FDA 服务端分页可能发生漂移，因此发现阶段会进行稳定排序、多轮扫描和
-  media ID 去重。
+- Successfully processed documents at the current extraction version are
+  skipped automatically.
+- Records at an older extraction version are reprocessed after extraction
+  rules change.
+- A database-level lock permits only one indexer per database.
+- On `SIGINT` or `SIGTERM`, the indexer stops submitting new documents and
+  waits for active writes to finish.
+- Metadata rows without a usable download URL are counted and skipped.
+- Because FDA server-side pagination can drift, discovery uses stable sorting,
+  repeated passes, and media ID deduplication.
 
-### 索引器参数
+### Indexer options
 
-| 参数 | 说明 |
+| Option | Description |
 | --- | --- |
-| `--database PATH` | SQLite 数据库路径，默认 `data/fda_search.sqlite3` |
-| `--limit N` | 仅处理最新的 N 条记录，适合快速验证 |
-| `--workers N` | 并行 PDF 处理线程数，默认 `2` |
-| `--refresh` | 忽略已有提取结果并重新处理 |
-| `--interval SECONDS` | 按指定间隔持续执行增量索引 |
+| `--database PATH` | SQLite database path; defaults to `data/fda_search.sqlite3` |
+| `--limit N` | Process only the newest N records for quick validation |
+| `--workers N` | Number of parallel PDF workers; defaults to `2` |
+| `--refresh` | Reprocess records regardless of existing extraction results |
+| `--interval SECONDS` | Repeat incremental indexing at the given interval |
 
-## 搜索语义
+## Search semantics
 
-- 查询按 Unicode 单词分词并忽略大小写，最多使用前 8 个词。
-- 每个词使用原词前缀匹配，所有词之间使用 `AND`。
-- 多个查询词不要求在正文中相邻。
-- 不执行编辑距离、拼写纠正、同义词或近似词扩展。
-- 结果使用 BM25 排序，其中 FEI 和企业名的权重较高。
+- Queries are split into case-insensitive Unicode word tokens, limited to the
+  first eight tokens.
+- Each token uses literal prefix matching, and all tokens are joined with
+  `AND`.
+- Query terms do not need to appear next to each other.
+- There is no edit-distance matching, spell correction, synonym expansion, or
+  approximate matching.
+- Results use BM25 ranking, with higher weights for FEI and company name.
 
-例如，`quality control` 只返回同时包含 `quality*` 和 `control*` 的记录。
+For example, `quality control` returns only records containing both `quality*`
+and `control*`.
 
 ## HTTP API
 
-服务默认监听 `127.0.0.1:8080`。可通过命令行修改监听地址和端口：
+The service listens on `127.0.0.1:8080` by default. Change the interface or port
+from the command line:
 
 ```bash
 python3 -m fda_search.server --host 0.0.0.0 --port 8080
@@ -161,16 +212,16 @@ python3 -m fda_search.server --host 0.0.0.0 --port 8080
 
 ### `GET /api/search`
 
-| 参数 | 说明 |
+| Parameter | Description |
 | --- | --- |
-| `q` | 全文查询 |
-| `state` | 州或地区精确筛选 |
-| `year` | 四位记录年份 |
-| `record_type` | record type 精确筛选 |
-| `limit` | 返回数量，范围 1-100，默认 20 |
-| `offset` | 分页偏移量，默认 0 |
+| `q` | Full-text query |
+| `state` | Exact state or location filter |
+| `year` | Four-digit record year |
+| `record_type` | Exact record type filter |
+| `limit` | Number of results, from 1 to 100; defaults to 20 |
+| `offset` | Pagination offset; defaults to 0 |
 
-示例：
+Example:
 
 ```bash
 curl "http://127.0.0.1:8080/api/search?q=quality%20control&limit=10"
@@ -178,58 +229,69 @@ curl "http://127.0.0.1:8080/api/search?q=quality%20control&limit=10"
 
 ### `GET /api/status`
 
-返回数据源发现数量、文档提取状态和当前同步进度：
+Returns source discovery counts, document extraction status, and current sync
+progress:
 
 ```bash
 curl http://127.0.0.1:8080/api/status
 ```
 
-## 项目结构
+## Project structure
 
 ```text
 src/fda_search/
-├── database.py       # SQLite 表结构和 FTS5 索引
-├── indexer.py        # FDA 记录发现、PDF 提取、OCR 和增量同步
-├── search.py         # 查询构造、筛选、排序和状态统计
-├── server.py         # 标准库 HTTP 服务和 JSON API
-└── static/           # 浏览器界面
-tests/                # unittest 测试
+├── database.py       # SQLite schema and FTS5 index
+├── indexer.py        # FDA discovery, PDF extraction, OCR, and sync
+├── search.py         # Query construction, filtering, ranking, and status
+├── server.py         # Standard-library HTTP server and JSON API
+└── static/           # Browser interface
+tests/                # unittest test suite
 ```
 
-项目刻意保持服务端轻量：爬取编排和 HTTP 服务使用 Python 标准库，SQLite
-同时承担持久化和全文检索，不需要独立搜索服务器。
+The server side is intentionally lightweight. Crawling orchestration and HTTP
+serving use the Python standard library, while SQLite handles both persistence
+and full-text search without a separate search service.
 
-## 测试
+## Testing
 
 ```bash
 python3 -m unittest
 ```
 
-测试使用临时数据库和模拟网络/PDF 输入，不会执行完整 FDA 抓取。
+Tests use temporary databases and mocked network or PDF inputs. They do not
+perform a full FDA crawl.
 
-## 数据、隐私与准确性
+## Data, privacy, and accuracy
 
-- 元数据和 PDF 来自 FDA 官方公开页面。
-- 原始 PDF 仅在处理期间使用临时文件，不会持久保存。
-- 本地数据库包含从公开文件提取的文本，不应提交到 Git。
-- 原生文本不足的页面会渲染后执行 OCR。
-- OCR 后仍无法获得足够文本的文档会标记为 `ocr_required`，而不是误报为
-  完整索引。
-- 单个格式异常、加密或无法解析的 PDF 会记录错误，不影响其他文档。
-- FDA 文件中的法定遮盖内容无法恢复，本项目不会推断或补全被遮盖内容。
-- 使用者应遵守 FDA 网站的适用条款，并控制抓取频率。
+- Metadata and PDFs come from official public FDA pages.
+- Source PDFs are used as temporary processing inputs and are not retained.
+- The local database contains text extracted from public files and must not be
+  committed to Git.
+- Pages with insufficient native text are rendered and passed through OCR.
+- Documents that still lack sufficient text after OCR are marked
+  `ocr_required` rather than reported as fully indexed.
+- A malformed, encrypted, or unreadable PDF is recorded as an isolated error.
+- Legally redacted content cannot be recovered. This project never infers or
+  fills in redacted text.
+- Users are responsible for following applicable FDA website terms and using a
+  considerate crawl frequency.
 
-## 参与贡献
+## Contributing
 
-欢迎提交 Issue 和 Pull Request。提交改动前请：
+Issues and pull requests are welcome. Before submitting a change:
 
-1. 保持网络访问仅限 FDA 官方 URL，并保留结果中的官方来源链接。
-2. 不要提交 PDF、SQLite 索引、OCR 模型缓存或其他生成文件。
-3. 不要改变当前的大小写不敏感、词前缀、全词 `AND` 搜索语义，除非改动目标
-   明确要求如此。
-4. 修改提取完整性规则时同步递增 `EXTRACTION_VERSION`。
-5. 运行 `python3 -m unittest` 并说明新增行为的验证方式。
+1. Keep network access restricted to official FDA URLs and retain official
+   source links.
+2. Do not commit PDFs, SQLite indexes, OCR model caches, or other generated
+   files.
+3. Preserve the case-insensitive, token-prefix, all-term `AND` search semantics
+   unless the change explicitly intends to alter that contract.
+4. Increment `EXTRACTION_VERSION` when extraction completeness rules change.
+5. Run `python3 -m unittest` and describe how new behavior was verified.
 
-## 许可证
+When changing documentation, keep [README.md](README.md) and
+[README.zh-CN.md](README.zh-CN.md) aligned.
 
-本项目采用 [MIT License](LICENSE)。
+## License
+
+This project is licensed under the [MIT License](LICENSE).

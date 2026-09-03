@@ -1,4 +1,4 @@
-# FDA Global Search Project Guide
+# FDA OpenRecords Search Project Guide
 
 ## Purpose
 
