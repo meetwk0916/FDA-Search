@@ -4,6 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="FDA 公开检查与合规记录全文搜索">
+  <meta name="theme-color" content="#0a192b">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='10' fill='%230a192b'/%3E%3Ctext x='32' y='42' font-family='monospace' font-size='24' font-weight='700' fill='%23bfe3f7' text-anchor='middle'%3EFDA%3C/text%3E%3C/svg%3E">
   <title>FDA 全局搜索</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -14,7 +16,7 @@
         <span class="brand-mark" aria-hidden="true">FDA</span>
         <span>Global Search</span>
       </a>
-      <div class="index-status" id="index-status" role="status">正在读取索引状态…</div>
+      <div class="index-status" id="index-status">正在读取索引状态…</div>
     </div>
   </header>
 
@@ -23,7 +25,6 @@
       <div class="shell">
         <p class="eyebrow">FDA PUBLIC RECORDS</p>
         <h1 id="page-title">FDA 全局搜索</h1>
-        <p class="intro">跨记录类型搜索企业信息、FEI、产品、批号及文件正文。所有关键词均须在记录中命中，不扩展近似拼写；每条结果均链接至 FDA 官方原始文件。</p>
 
         <form class="search-form" id="search-form" role="search">
           <label class="sr-only" for="query">搜索 FDA 记录</label>
@@ -36,7 +37,7 @@
 
         <div class="filters" aria-label="筛选条件">
           <div>
-            <label for="record-type">Record type</label>
+            <label for="record-type" lang="en">Record type</label>
             <select id="record-type" name="record_type"><option value="">全部类型</option></select>
           </div>
           <div>
@@ -63,9 +64,8 @@
             </button>
           </div>
         </div>
-        <p class="source-note">数据来源：U.S. Food &amp; Drug Administration</p>
       </div>
-      <div id="results" class="results" aria-live="polite" aria-busy="true"></div>
+      <div id="results" class="results"></div>
       <nav class="pagination" id="pagination" aria-label="搜索结果分页" hidden>
         <button id="previous-page" type="button">上一页</button>
         <span id="page-status"></span>
@@ -75,7 +75,7 @@
   </main>
 
   <footer>
-    <div class="shell">独立检索工具 · 原文版权与数据归 FDA 所有 · 搜索结果请以 FDA 官方原始文件为准</div>
+    <div class="shell">数据来源 U.S. Food &amp; Drug Administration · 结果以 FDA 官方原始文件为准</div>
   </footer>
   <script src="/app.js" defer></script>
 </body>

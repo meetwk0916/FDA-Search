@@ -6,8 +6,11 @@ const state = {
   searchStored: null,
   statusTimer: null,
   latestStatusText: null,
+  searchController: null,
+  searchSeq: 0,
 };
 const initial = new URLSearchParams(location.search);
+const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const elements = {
   form: document.querySelector("#search-form"),
@@ -62,7 +65,21 @@ function addFilterOptions(select, values) {
 
 function setInitialFilter(select, name) {
   const value = initial.get(name) || "";
-  if (value) select.add(new Option(value, value, true, true));
+  if (!value) return;
+  const exists = Array.from(select.options).some((option) => option.value === value);
+  if (exists) {
+    select.value = value;
+  } else {
+    select.dataset.pendingValue = value;
+  }
+}
+
+function applyPendingFilter(select) {
+  const value = select.dataset.pendingValue;
+  if (!value) return;
+  const exists = Array.from(select.options).some((option) => option.value === value);
+  if (exists) select.value = value;
+  delete select.dataset.pendingValue;
 }
 
 function hasActiveCriteria() {
@@ -88,34 +105,32 @@ function renderResult(record) {
   const article = document.createElement("article");
   article.className = "result";
 
-  const top = document.createElement("div");
-  top.className = "result-top";
+  const main = document.createElement("div");
+  main.className = "result-main";
   const heading = document.createElement("h3");
   const titleLink = document.createElement("a");
   titleLink.href = record.download_url;
   titleLink.target = "_blank";
   titleLink.rel = "noopener";
-  titleLink.textContent =
-    record.company || `FDA ${record.record_type || "record"} #${record.media_id}`;
+  const company = record.company || `FDA ${record.record_type || "record"} #${record.media_id}`;
+  titleLink.textContent = `${company} ↗`;
+  titleLink.setAttribute("aria-label", `${company}（新窗口打开 FDA 官方文件）`);
   heading.append(titleLink);
-  const date = document.createElement("span");
-  date.className = "record-date";
-  date.textContent = `检查日期 ${record.record_date || "未知"}`;
-  top.append(heading, date);
+  main.append(heading);
 
   const meta = document.createElement("div");
   meta.className = "meta";
   addMeta(meta, "FEI", record.fei);
-  addMeta(meta, "Record type", record.record_type);
   addMeta(meta, "地区", [record.state, record.country].filter(Boolean).join(", "));
   addMeta(meta, "机构类型", record.establishment_type);
+  main.append(meta);
 
-  const snippet = document.createElement("p");
-  snippet.className = "snippet";
-  appendHighlightedText(
-    snippet,
-    record.snippet || "该记录已建立索引；输入关键词可查看命中的原文上下文。"
-  );
+  if (record.snippet) {
+    const snippet = document.createElement("p");
+    snippet.className = "snippet";
+    appendHighlightedText(snippet, record.snippet);
+    main.append(snippet);
+  }
 
   const actions = document.createElement("div");
   actions.className = "result-actions";
@@ -125,12 +140,29 @@ function renderResult(record) {
   download.target = "_blank";
   download.rel = "noopener";
   download.textContent = "打开 FDA 官方原始文件 ↗";
-  const pageCount = document.createElement("span");
-  pageCount.className = "page-count";
-  pageCount.textContent = record.page_count ? `${record.page_count} 页` : "";
-  actions.append(download, pageCount);
+  actions.append(download);
+  main.append(actions);
 
-  article.append(top, meta, snippet, actions);
+  const side = document.createElement("div");
+  side.className = "result-side";
+  if (record.record_type) {
+    const chip = document.createElement("span");
+    chip.className = "record-type-chip";
+    chip.textContent = record.record_type;
+    side.append(chip);
+  }
+  const date = document.createElement("span");
+  date.className = "record-date";
+  date.textContent = record.record_date || "未知";
+  side.append(date);
+  if (record.page_count) {
+    const pageCount = document.createElement("span");
+    pageCount.className = "page-count";
+    pageCount.textContent = `${record.page_count} 页`;
+    side.append(pageCount);
+  }
+
+  article.append(main, side);
   return article;
 }
 
@@ -143,19 +175,28 @@ function updatePagination() {
   elements.pageStatus.textContent = `第 ${page} / ${pages} 页`;
 }
 
-function syncUrl() {
+function syncUrl(mode = "replace") {
   const params = new URLSearchParams();
   if (elements.query.value.trim()) params.set("q", elements.query.value.trim());
   if (elements.recordType.value) params.set("record_type", elements.recordType.value);
   if (elements.state.value) params.set("state", elements.state.value);
   if (elements.year.value) params.set("year", elements.year.value);
   if (state.offset) params.set("offset", String(state.offset));
-  history.replaceState(null, "", params.size ? `?${params}` : location.pathname);
+  const url = params.size ? `?${params}` : location.pathname;
+  if (mode === "push") {
+    history.pushState(null, "", url);
+  } else {
+    history.replaceState(null, "", url);
+  }
 }
 
-async function runSearch(resetOffset = false) {
+async function runSearch({ resetOffset = false, historyMode = "replace" } = {}) {
+  if (state.searchController) state.searchController.abort();
+  const controller = new AbortController();
+  state.searchController = controller;
+  const seq = ++state.searchSeq;
+
   if (resetOffset) state.offset = 0;
-  elements.results.setAttribute("aria-busy", "true");
   elements.results.innerHTML = '<div class="loading" role="status">正在检索索引…</div>';
   const params = new URLSearchParams({
     q: elements.query.value.trim(),
@@ -165,11 +206,12 @@ async function runSearch(resetOffset = false) {
     limit: String(PAGE_SIZE),
     offset: String(state.offset),
   });
-  syncUrl();
+  syncUrl(historyMode);
 
   try {
-    const response = await fetch(`/api/search?${params}`);
+    const response = await fetch(`/api/search?${params}`, { signal: controller.signal });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (seq !== state.searchSeq) return;
     const payload = await response.json();
     state.total = payload.total;
     if (state.latestStored !== null) state.searchStored = state.latestStored;
@@ -187,16 +229,39 @@ async function runSearch(resetOffset = false) {
     addFilterOptions(elements.state, payload.states);
     addFilterOptions(elements.recordType, payload.record_types);
     addFilterOptions(elements.year, payload.years);
+    applyPendingFilter(elements.state);
+    applyPendingFilter(elements.recordType);
+    applyPendingFilter(elements.year);
     updatePagination();
   } catch (error) {
+    if (error.name === "AbortError") return;
+    if (seq !== state.searchSeq) return;
     elements.summary.textContent = "检索失败";
     elements.results.innerHTML =
       '<div class="error" role="alert">无法读取本地索引，请确认搜索服务正在运行。</div>';
     elements.pagination.hidden = true;
     console.error(error);
-  } finally {
-    elements.results.setAttribute("aria-busy", "false");
   }
+}
+
+function applyParamsToControls(params) {
+  elements.query.value = params.get("q") || "";
+  for (const [select, name] of [
+    [elements.recordType, "record_type"],
+    [elements.state, "state"],
+    [elements.year, "year"],
+  ]) {
+    const value = params.get(name) || "";
+    const exists = Array.from(select.options).some((option) => option.value === value);
+    if (value && !exists) {
+      select.value = "";
+      select.dataset.pendingValue = value;
+    } else {
+      select.value = value;
+      delete select.dataset.pendingValue;
+    }
+  }
+  state.offset = Number(params.get("offset")) || 0;
 }
 
 async function loadStatus() {
@@ -222,7 +287,9 @@ async function loadStatus() {
     }[sync.state] || "";
     state.latestStatusText =
       `索引进度 ${stored.toLocaleString()} / ${downloadable.toLocaleString()} 份${phase}`;
-    elements.status.textContent = state.latestStatusText;
+    if (elements.status.textContent !== state.latestStatusText) {
+      elements.status.textContent = state.latestStatusText;
+    }
     const source = status.source || {};
     elements.status.title =
       `已收录 ${stored.toLocaleString()} 份：正文完整 ${indexed.toLocaleString()} 份，` +
@@ -236,10 +303,11 @@ async function loadStatus() {
       elements.refreshResults.hidden = false;
     }
   } catch {
-    if (state.latestStored === null) {
-      elements.status.textContent = "索引状态不可用";
-    } else {
-      elements.status.textContent = `${state.latestStatusText} · 状态暂不可用`;
+    const fallback = state.latestStored === null
+      ? "索引状态不可用"
+      : `${state.latestStatusText} · 状态暂不可用`;
+    if (elements.status.textContent !== fallback) {
+      elements.status.textContent = fallback;
     }
   }
 }
@@ -252,29 +320,40 @@ function startStatusPolling() {
   state.statusTimer = setInterval(loadStatus, 30000);
 }
 
+function scrollToResults() {
+  scrollTo({
+    top: document.querySelector(".results-section").offsetTop,
+    behavior: reduceMotion.matches ? "instant" : "smooth",
+  });
+}
+
 elements.form.addEventListener("submit", (event) => {
   event.preventDefault();
-  runSearch(true);
+  runSearch({ resetOffset: true, historyMode: "push" });
 });
-elements.recordType.addEventListener("change", () => runSearch(true));
-elements.state.addEventListener("change", () => runSearch(true));
-elements.year.addEventListener("change", () => runSearch(true));
+elements.recordType.addEventListener("change", () => runSearch({ resetOffset: true, historyMode: "push" }));
+elements.state.addEventListener("change", () => runSearch({ resetOffset: true, historyMode: "push" }));
+elements.year.addEventListener("change", () => runSearch({ resetOffset: true, historyMode: "push" }));
 elements.clear.addEventListener("click", () => {
   elements.recordType.value = "";
   elements.state.value = "";
   elements.year.value = "";
-  runSearch(true);
+  runSearch({ resetOffset: true, historyMode: "push" });
 });
-elements.refreshResults.addEventListener("click", () => runSearch(true));
+elements.refreshResults.addEventListener("click", () => runSearch({ resetOffset: true }));
 elements.previous.addEventListener("click", () => {
   state.offset = Math.max(0, state.offset - PAGE_SIZE);
   runSearch();
-  scrollTo({ top: document.querySelector(".results-section").offsetTop, behavior: "smooth" });
+  scrollToResults();
 });
 elements.next.addEventListener("click", () => {
   state.offset += PAGE_SIZE;
   runSearch();
-  scrollTo({ top: document.querySelector(".results-section").offsetTop, behavior: "smooth" });
+  scrollToResults();
+});
+window.addEventListener("popstate", () => {
+  applyParamsToControls(new URLSearchParams(location.search));
+  runSearch();
 });
 
 elements.query.value = initial.get("q") || "";
@@ -284,4 +363,4 @@ setInitialFilter(elements.year, "year");
 state.offset = Number(initial.get("offset")) || 0;
 document.addEventListener("visibilitychange", startStatusPolling);
 startStatusPolling();
-runSearch();
+runSearch({ historyMode: "replace" });
