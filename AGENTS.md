@@ -2,8 +2,10 @@
 
 ## Purpose
 
-Local full-text search for downloadable FDA OII public-record PDFs across
-record types, with official source links and OCR fallback for scanned pages.
+Full-text search for downloadable FDA OII public-record PDFs across record
+types, with official source links and OCR fallback for scanned pages. This
+repository is the core application and local verification source; BI EDP is
+the active delivery target.
 
 ## Run and verify
 
@@ -34,9 +36,27 @@ Set `PYTHONPATH=.deps:.` for all commands.
 - Increment `EXTRACTION_VERSION` when extraction completeness rules change.
 - Keep malformed PDF and OCR failures isolated to one document.
 
+## Repository and deployment routing
+
+- GitHub `origin/main` contains the core application and local workflow.
+- Bitbucket `genfox-fbi/dev` has unrelated OpenDevStack history and is the
+  authoritative BI EDP integration branch. Preserve its Jenkins, Helm, and
+  Docker scaffold; never force-push GitHub history over it.
+- Port application changes to Bitbucket as normal commits based on its `dev`
+  head, then verify the remote SHA.
+- Keep EDP deployment configuration and operational guidance in Bitbucket.
+  This repository should only point to that authority instead of duplicating
+  a second deployment specification.
+- The former Tencent Cloud Lighthouse plan is retired.
+
 ## Current state
 
-The local resumable global backfill is running with one locked indexer and the
-local search service. Use `/api/status` as the live authority. There is no
-hosted production deployment yet; GitHub Issue #2 is the approved Tencent Cloud
-Hong Kong Lighthouse deployment specification.
+- The local historical backfill completed on 2026-08-28 with all 2,956 unique
+  downloadable FDA PDFs stored. The ignored SQLite database is not a Git
+  artifact.
+- Do not infer runtime availability from persisted sync state. Verify the
+  process list and `/api/status`; the local Web and indexer processes may be
+  stopped.
+- BI EDP deployment is not yet live-verified. The current Bitbucket scaffold
+  still needs the Python/OCR image, persistent volume, Web command, probes, and
+  scheduled incremental index job.

@@ -1,6 +1,6 @@
 # FDA Global Full-text Search
 
-本地抓取 FDA OII Electronic Reading Room 中全部可下载记录的 PDF，提取正文
+抓取 FDA OII Electronic Reading Room 中全部可下载记录的 PDF，提取正文
 至 SQLite FTS5，并提供要求全部查询词命中的浏览器搜索界面。Record type 作为
 可选过滤器，不限制全局索引范围。
 每条结果保留 FDA 原始 PDF 下载链接。
@@ -82,12 +82,20 @@ python3 -m fda483.server
 python3 -m unittest
 ```
 
-## 部署状态
+## 交付与部署状态
 
-当前只有本地运行环境，尚未部署公开生产站点。已批准的下一步是
-[GitHub Issue #2](https://github.com/meetwk0916/FDA/issues/2)：完成本地历史索引后，
-部署到腾讯云香港 Lighthouse 2C4G，并由 systemd timer 每 12 小时执行一次
-单 worker 增量索引。
+本仓库保留核心应用源码、本地运行方式和历史索引能力。面向团队的交付目标已经
+切换为 BI EDP；EDP 部署脚手架和现役部署说明以内部 Bitbucket
+[`GENFOX/genfox-fbi` 的 `dev` 分支](https://bitbucket.biscrum.com/projects/GENFOX/repos/genfox-fbi/browse?at=refs%2Fheads%2Fdev)
+为准。
+
+Bitbucket 仓库当前已包含应用源码以及 OpenDevStack Jenkins、OpenShift 和 Helm
+脚手架，但 Python/OCR 镜像、SQLite 持久卷、Web Deployment 和定时增量索引
+CronJob 仍待接入并验证。因此，代码已进入 EDP 仓库不代表应用已经部署或上线。
+
+此前的腾讯云 Lighthouse 个人部署方案已经退役，不再是项目下一步。
+本地历史索引已于 2026-08-28 完成，SQLite 数据保存在被 Git 忽略的 `data/`
+目录中；索引数据库不会随源码推送到 GitHub 或 Bitbucket。
 
 ## 数据与准确性
 
