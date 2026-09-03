@@ -10,7 +10,7 @@ the active delivery target.
 ## Run and verify
 
 Install dependencies with `python3 -m pip install --target .deps -r requirements.txt`.
-Set `PYTHONPATH=.deps:.` for all commands.
+Set `PYTHONPATH=.deps:src` for all commands.
 
 - Index or resume: `python3 -m fda483.indexer --workers 2`
 - Roll continuously: `python3 -m fda483.indexer --workers 2 --interval 43200`
@@ -21,10 +21,11 @@ Set `PYTHONPATH=.deps:.` for all commands.
 ## Stack and layout
 
 - Python standard-library HTTP server and crawler orchestration
-- SQLite FTS5 in `fda483/database.py`
-- PDF extraction/OCR in `fda483/indexer.py`
-- Search contract in `fda483/search.py`
-- Browser UI in `fda483/static/`
+- Application package in `src/fda483/`
+- SQLite FTS5 in `src/fda483/database.py`
+- PDF extraction/OCR in `src/fda483/indexer.py`
+- Search contract in `src/fda483/search.py`
+- Browser UI in `src/fda483/static/`
 - Generated dependencies and index data in ignored `.deps/` and `data/`
 
 ## Invariants

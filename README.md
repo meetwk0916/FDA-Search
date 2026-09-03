@@ -17,7 +17,7 @@ python3 -m pip install --target .deps -r requirements.txt
 后续命令在 Linux / WSL 中使用：
 
 ```bash
-export PYTHONPATH=.deps:.
+export PYTHONPATH=.deps:src
 ```
 
 ## 建立索引
